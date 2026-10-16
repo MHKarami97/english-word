@@ -32,7 +32,7 @@ Built on top of the shared **"4000 Essential English Words"** AnkiWeb deck ([ank
 - **Hint** — a contextual example sentence for each word, extracted from the official 2nd Edition reading passages
 - **FaMeaning / FaExample** — Persian (Farsi) translations of the Meaning and Example fields, shown as a collapsible "فا" toggle
 
-📥 Download: [Release v2.0.0](../../releases/tag/v2.0.0)
+📥 Download: [Release v2.1.0](../../releases/tag/v2.1.0) — already studying the AnkiWeb version or v2.0.0? Import it over your deck; your review history is kept.
 
 | Front | Back |
 |---|---|
@@ -50,7 +50,7 @@ AnkiWeb Shared Decks **(easy to use)**:
 
 The original 6-book deck generated from `data/old-books/`, with contextual Hint sentences extracted from the reading passages.
 
-📥 Download: [Release v1.0.0](../../releases/tag/v1.0.0)
+📥 Download: [Release v1.1.0](../../releases/tag/v1.1.0) — already studying the AnkiWeb version or v1.0.0? Import it over your decks; your review history is kept.
 
 | Front | Back |
 |---|---|
@@ -144,5 +144,7 @@ Rules the check enforces:
 python scripts/fix/fix_deck.py --edition old-books --out-dir dist/fixed --report dist/fixed/changes-old-books.md dist/old-books/*.apkg
 python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir dist/fixed --report dist/fixed/changes-2nd-edition.md "dist/shared-deck/4000 EEW (2nd Edition).apkg"
 ```
+
+Releases are built and checked on GitHub's servers by the **Release decks** workflow (`.github/workflows/release-decks.yml`, run it from the Actions tab; tick *publish* only after a dry run). `scripts/compat/verify_apkg.py` checks package integrity (CRC and media SHA-1).
 
 The `--report` file lists every changed field for review. `anki_generator.py` applies the same rules, so a fresh Old Books build matches `fix_deck.py`'s output. Media files are verified too; a damaged one can be restored with `--repair-media-from` pointing at Anki's `collection.media` folder.

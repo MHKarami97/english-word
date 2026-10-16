@@ -164,7 +164,13 @@ def balance_quotes(paragraph: str, start: int, end: int) -> str:
         text = '"' + text
     if text.count('"') % 2:
         # Reading from an "outside" state, an odd count leaves the last quotation open.
-        text += '"'
+        # Close it before a trailing dialogue tag (the source lost that quote):
+        # '"No respect at all, they said.'  ->  '"No respect at all," they said.'
+        tag = re.match(rf'^(.*\S),(\s+(?:[A-Za-z]+\s+){{0,3}}(?:{"|".join(SPEECH_VERBS)})[.!?])$', text)
+        if tag:
+            text = tag.group(1) + ',"' + tag.group(2)
+        else:
+            text += '"'
     return text
 
 
