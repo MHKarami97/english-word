@@ -82,11 +82,17 @@ scripts/
     translate_deck_deepl.py
   compat/               # Keeps updates safe for people already studying the decks
     check_compat.py
+  fix/                  # Fixes hints, Persian translations and typos in built decks
+    content_fixes.py
+    fix_deck.py
 
 data/                   # Raw scraped data (data.json, images/, audio/) per book
   2nd-edition/book{1..6}/
   old-books/book{1..6}/
   guid-baseline/        # Note GUIDs of the decks as published on AnkiWeb
+    old-books.json
+    2nd-edition.json
+  corrections/          # Manual fixes (typos, translations) by note GUID
     old-books.json
     2nd-edition.json
 
@@ -125,3 +131,18 @@ Rules the check enforces:
 - **Never change** a notetype ID (`MODEL_ID`), its field list or field order, or remove/reorder card templates.
 - **Never drop** a published note or give it a new GUID.
 - **Safe:** editing field contents, CSS and card layout, renaming decks, adding new notes.
+
+## Fixing Hints, Translations and Typos
+
+`scripts/fix/fix_deck.py` cleans up a built deck in place of rebuilding it, keeping every GUID and media file:
+
+- **Hints** are re-cut from the unit's story: complete sentences, balanced quotes, no stray spaces before punctuation, no story titles glued in front, and very short sentences get the sentence before them as extra context.
+- **Persian** fields use Persian ی/ک and get the final punctuation of the English source.
+- **Manual corrections** in `data/corrections/<edition>.json` fix typos and broken translations. Add new ones there (keyed by note GUID) rather than editing a deck by hand.
+
+```bash
+python scripts/fix/fix_deck.py --edition old-books --out-dir dist/fixed --report dist/fixed/changes-old-books.md dist/old-books/*.apkg
+python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir dist/fixed --report dist/fixed/changes-2nd-edition.md "dist/shared-deck/4000 EEW (2nd Edition).apkg"
+```
+
+The `--report` file lists every changed field for review. `anki_generator.py` applies the same rules, so a fresh Old Books build matches `fix_deck.py`'s output. Media files are verified too; a damaged one can be restored with `--repair-media-from` pointing at Anki's `collection.media` folder.
