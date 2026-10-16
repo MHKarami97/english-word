@@ -1,6 +1,7 @@
 {
  "description": "Manual corrections for the 2nd Edition [en-fa] deck, applied by scripts/fix/fix_deck.py. Keyed by note GUID; 'word' guards against applying a fix to the wrong note. A string replaces the whole field; a list of [old, new] pairs replaces substrings.",
  "notes": {
+  "CqxL*!~fU-": {"word": "found", "Hint": "\"I founded this bank. I want to give you a hundred dollars.\""},
   "nw>EH_SkpN": {"word": "kill", "FaExample": "من مگس را <b>کشتم</b>."},
   "jke0.hupuW": {"word": "noise", "FaExample": "نوزاد گریان <b>سر و صدای</b> زیادی به راه انداخت."},
   "EiHgS4_ejg": {"word": "secret", "Hint": "\"Oh, no,\" he said. \"You must have learned my secret.\""},

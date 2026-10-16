@@ -234,6 +234,25 @@ def _checked_media(zin, info, entry, repair_dir):
                      "Pass --repair-media-from with a folder holding the original (e.g. Anki's collection.media).")
 
 
+def _updated_legacy_media(zin, data_dir: Path, books) -> dict:
+    """
+    Old Books packages list media as {"0": "name.mp3", ...}. Return
+    {member: (name, bytes)} for files corrected later in data/old-books/bookN/.
+    """
+    if "media" not in zin.namelist() or "collection.anki21b" in zin.namelist():
+        return {}
+    updates = {}
+    for member, name in json.loads(zin.read("media")).items():
+        sub = "audio" if name.lower().endswith((".mp3", ".ogg", ".wav")) else "images"
+        for book in books:
+            source = data_dir / f"book{book}" / sub / name
+            if source.exists():
+                content = source.read_bytes()
+                if content != zin.read(member):
+                    updates[member] = (name, content)
+    return updates
+
+
 def fix_apkg(edition, src: Path, dst: Path, stories, corrections, report, repair_dir=None):
     cfg = EDITIONS[edition]
     with zipfile.ZipFile(src) as zin, tempfile.TemporaryDirectory() as tmp:
@@ -252,13 +271,25 @@ def fix_apkg(edition, src: Path, dst: Path, stories, corrections, report, repair
         for nid, did in conn.execute("SELECT nid, did FROM cards ORDER BY ord DESC"):
             note_deck[nid] = decks.get(did, "")
 
+        media_updates = {}
+        if edition == "old-books":
+            books = {int(m.group(1)) for d in note_deck.values() for m in [cfg["book_re"].search(d)] if m}
+            media_updates = _updated_legacy_media(zin, Path(cfg["data_dir"]), books)
+            for name, _content in media_updates.values():
+                print(f"  updated media file {name} from {cfg['data_dir']}")
+                report.append((src.name, "", name, "media", "(previous file)", f"corrected file from {cfg['data_dir']}"))
+        updated_names = {name for name, _content in media_updates.values()}
+
         now, changed = int(time.time()), 0
         for nid, guid, flds, tags in conn.execute("SELECT id, guid, flds, tags FROM notes WHERE mid=?", (mid,)).fetchall():
             old = dict(zip(names, flds.split(FIELD_SEP)))
             m = cfg["book_re"].search(note_deck.get(nid, ""))
             book = int(m.group(1)) if m else None
             new = fix_note_fields(edition, old, guid, story_for(edition, stories, book, old["Word"], tags), corrections)
-            if new == old:
+            # A note whose media file was replaced must count as newer too, or
+            # Anki keeps pointing it at the old file when the deck is imported.
+            uses_updated_media = any(name in flds for name in updated_names)
+            if new == old and not uses_updated_media:
                 continue
             for name in names:
                 if new[name] != old[name]:
@@ -282,6 +313,8 @@ def fix_apkg(edition, src: Path, dst: Path, stories, corrections, report, repair
                     payload = data
                 elif media_index is not None and info.filename.isdigit():
                     payload = _checked_media(zin, info, media_index[int(info.filename)], repair_dir)
+                elif info.filename in media_updates:
+                    payload = media_updates[info.filename][1]
                 else:
                     payload = zin.read(info.filename)   # raises on a bad CRC
                 zout.writestr(info, payload, compress_type=info.compress_type)

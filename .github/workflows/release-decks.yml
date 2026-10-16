@@ -1,0 +1,102 @@
+name: Release decks
+
+# Builds the corrected decks on GitHub's servers, checks that people who
+# already study the AnkiWeb/GitHub versions keep their review history, and
+# (only when "publish" is ticked) creates the GitHub releases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      old_books_tag:
+        description: "Release tag for the Old Books decks"
+        required: true
+        default: "v1.1.0"
+      second_edition_tag:
+        description: "Release tag for the 2nd Edition deck"
+        required: true
+        default: "v2.1.0"
+      publish:
+        description: "Create the releases (otherwise only build and check)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OLD_BOOKS_TAG: ${{ inputs.old_books_tag }}
+      SECOND_EDITION_TAG: ${{ inputs.second_edition_tag }}
+      # The 2nd Edition source is the published v2.0.0 asset (identical to AnkiWeb).
+      SOURCE_TAG: v2.0.0
+      SOURCE_ASSET: 4000.EEW.2nd.Edition.apkg
+      SOURCE_SHA256: 479a870fc1ab1ea2e5732dc0074e31c240054ee013acef4eecc6769b41bddedf
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install zstandard==0.23.0
+
+      - name: Check release notes exist
+        run: |
+          test -f "docs/release-notes/$OLD_BOOKS_TAG.md"
+          test -f "docs/release-notes/$SECOND_EDITION_TAG.md"
+
+      - name: Download the published 2nd Edition deck
+        run: |
+          mkdir -p source
+          gh release download "$SOURCE_TAG" --pattern "$SOURCE_ASSET" --dir source
+          echo "$SOURCE_SHA256  source/$SOURCE_ASSET" | sha256sum --check -
+
+      - name: Check the sources against the AnkiWeb baselines
+        run: |
+          python scripts/compat/verify_apkg.py dist/old-books/*.apkg "source/$SOURCE_ASSET"
+          python scripts/compat/check_compat.py check --baseline data/guid-baseline/old-books.json dist/old-books/*.apkg
+          python scripts/compat/check_compat.py check --baseline data/guid-baseline/2nd-edition.json "source/$SOURCE_ASSET"
+
+      - name: Apply hint, translation and typo fixes
+        run: |
+          python scripts/fix/fix_deck.py --edition old-books --out-dir out --report out/changes-old-books.md dist/old-books/*.apkg
+          python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir out --report out/changes-2nd-edition.md "source/$SOURCE_ASSET"
+
+      - name: Check the new decks
+        run: |
+          python scripts/compat/verify_apkg.py out/*.apkg
+          python scripts/compat/check_compat.py check --baseline data/guid-baseline/old-books.json out/4000EEW_Old_Book_*.apkg
+          python scripts/compat/check_compat.py check --baseline data/guid-baseline/2nd-edition.json "out/$SOURCE_ASSET"
+          # A second run must change nothing.
+          python scripts/fix/fix_deck.py --edition old-books --out-dir again out/4000EEW_Old_Book_*.apkg | tee again.log
+          python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir again "out/$SOURCE_ASSET" | tee -a again.log
+          if grep -E ": [1-9][0-9]* note\(s\) changed|updated media file" again.log; then
+            echo "fix_deck.py is not idempotent"; exit 1
+          fi
+          (cd out && sha256sum *.apkg | tee SHA256SUMS.txt)
+
+      - name: Keep the change reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: change-reports
+          path: |
+            out/*.md
+            out/SHA256SUMS.txt
+
+      - name: Publish the releases
+        if: ${{ inputs.publish }}
+        run: |
+          gh release create "$OLD_BOOKS_TAG" out/4000EEW_Old_Book_*.apkg \
+            --target "$GITHUB_SHA" --latest=false \
+            --title "4000 EEW (Old Books) — corrected hints and typos" \
+            --notes-file "docs/release-notes/$OLD_BOOKS_TAG.md"
+          gh release create "$SECOND_EDITION_TAG" "out/$SOURCE_ASSET" \
+            --target "$GITHUB_SHA" --latest \
+            --title "4000 EEW (2nd Edition) — corrected hints & Persian translations" \
+            --notes-file "docs/release-notes/$SECOND_EDITION_TAG.md"
