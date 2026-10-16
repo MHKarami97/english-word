@@ -7,9 +7,11 @@ import re
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-# check_compat.py lives in a sibling directory (scripts/compat/).
+# check_compat.py and fix_deck.py live in sibling directories (scripts/compat/, scripts/fix/).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "compat"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "fix"))
 from check_compat import load_guid_map, normalize_key
+from fix_deck import fix_note_fields, load_corrections
 
 import spacy
 # Load spaCy model
@@ -47,6 +49,9 @@ BASE_DECK_ID = 2026062215
 GUID_BASELINE = "data/guid-baseline/old-books.json"
 # Namespace for GUIDs of words that have not been published yet
 GUID_NAMESPACE = "4000eew-old-books"
+# Manual fixes of typos etc., shared with scripts/fix/fix_deck.py
+CORRECTIONS = "data/corrections/old-books.json"
+FIELD_NAMES = ["Word", "Pronunciation", "Definition", "Hint", "Example", "Image", "Audio"]
 
 # CSS for centering content and basic styling
 STYLE = """
@@ -265,10 +270,11 @@ def note_guid(guid_map, deck_name, book_id, word):
         print(f"New note (not in {GUID_BASELINE}): {word}")
     return guid
 
-def create_deck(book_id, guid_map, out_dir="dist/old-books"):
+def create_deck(book_id, guid_map, corrections, out_dir="dist/old-books"):
     """
     book_id: integer from 1 to 6
     guid_map: {(deck_name, word): guid} of the published notes, from load_guid_map()
+    corrections: manual fixes by GUID, from load_corrections()
     out_dir: folder the .apkg is written to
     """
 
@@ -324,23 +330,28 @@ def create_deck(book_id, guid_map, out_dir="dist/old-books"):
             if os.path.exists(audio_path):
                 media_files.append(audio_path)
 
+            guid = note_guid(guid_map, deck_name, book_id, word)
+            fields = dict(zip(FIELD_NAMES, [
+                word,
+                pron,
+                definition,
+                hint_sentence,
+                example,
+                f'<img src="{image_name}">',
+                f'[sound:{audio_name}]'
+            ]))
+            # Tidy the hint (spacing, quotes, full sentence) and apply manual corrections
+            fields = fix_note_fields("old-books", fields, guid, story_text, corrections)
+
             note = genanki.Note(
                 model=my_model,
-                fields=[
-                    word,
-                    pron,
-                    definition,
-                    hint_sentence,
-                    example,
-                    f'<img src="{image_name}">',
-                    f'[sound:{audio_name}]'
-                ],
+                fields=[fields[name] for name in FIELD_NAMES],
                 tags=[
                     f"Book{book_id}",
                     f"{unit_tag}",
                     f"Book{book_id}::{unit_tag}"
                 ],
-                guid=note_guid(guid_map, deck_name, book_id, word)
+                guid=guid
             )
             deck.add_note(note)
             #if word == "scare": break
@@ -359,8 +370,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     guid_map = load_guid_map(GUID_BASELINE)
+    corrections = load_corrections(Path(CORRECTIONS))
     for i in args.books:
-        create_deck(i, guid_map, args.out_dir)
+        create_deck(i, guid_map, corrections, args.out_dir)
 
     print("\nBefore sharing on AnkiWeb, check that existing users keep their progress:")
     print(f"  python scripts/compat/check_compat.py check --baseline {GUID_BASELINE} {args.out_dir}/*.apkg")

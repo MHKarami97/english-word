@@ -1,0 +1,22 @@
+{
+ "description": "Manual corrections for the Old Books decks, applied by scripts/fix/fix_deck.py and anki_generator.py. Keyed by note GUID; 'word' guards against applying a fix to the wrong note. A string replaces the whole field; a list of [old, new] pairs replaces substrings.",
+ "notes": {
+  "z+DyQ]a-Nc": {"word": "finally", "Definition": [["after a longtime", "after a long time"]]},
+  "fm~H#X]ELO": {"word": "project", "Definition": [["school ora job", "school or a job"]]},
+  "NVZk=VgNio": {"word": "trouble", "Definition": [["problem ora difficulty", "problem or a difficulty"]]},
+  "h[Mt(9*1{]": {"word": "web", "Definition": "A web is a net of thin threads that a spider makes to catch insects."},
+  "y6(SO[M%}B": {"word": "bucket", "Definition": [["containerto", "container to"]]},
+  "BW5iv96`zZ": {"word": "couch", "Example": [["M artin", "Martin"]]},
+  "y&dkQ_v<-r": {"word": "dialect", "Example": [["from those in the U.K.", "from those in the U.S."]]},
+  "JE7RkRIr:3": {"word": "rag", "Example": [["dust o ff the", "dust off the"]]},
+  "y/vnb;Dn73": {"word": "joint", "Example": [["<strong>join </strong>t in", "<strong>joint </strong>in"]]},
+  "s:$`dgzH==": {"word": "stiff", "Example": [["s <strong>tiff </strong>branch", "<strong>stiff </strong>branch"]]},
+  "t9}k.13G]o": {"word": "fuse", "Example": [["boy litthe", "boy lit the"]]},
+  "e[%+]n#JeG": {"word": "ambassador", "Example": [["charge ofthe", "charge of the"]]},
+  "m#4Y`LX]c&": {"word": "heritage", "Example": [["part ofthe", "part of the"]]},
+  "tCUpd}v9CC": {"word": "suspicious", "Example": [["ofthe caller", "of the caller"]]},
+  "qgxt4]th3n": {"word": "primitive", "Example": [["those of todays", "those of today"]]},
+  "MQRb!!?*Zo": {"word": "hull", "Example": [["Afterthe wreckatsea", "After the wreck at sea"]]},
+  "y)PA1~jP)X": {"word": "trance", "Definition": [["is a a state", "is a state"]]}
+ }
+}
