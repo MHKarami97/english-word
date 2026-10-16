@@ -80,10 +80,15 @@ scripts/
     add_hints_to_shared_deck.py
     translate_deck_dahl.py
     translate_deck_deepl.py
+  compat/               # Keeps updates safe for people already studying the decks
+    check_compat.py
 
 data/                   # Raw scraped data (data.json, images/, audio/) per book
   2nd-edition/book{1..6}/
   old-books/book{1..6}/
+  guid-baseline/        # Note GUIDs of the decks as published on AnkiWeb
+    old-books.json
+    2nd-edition.json
 
 dist/                   # Generated Anki decks (.apkg)
   old-books/
@@ -91,3 +96,32 @@ dist/                   # Generated Anki decks (.apkg)
 
 docs/                   # Screenshots referenced in this README
 ```
+
+## Updating the Published Decks Safely
+
+Many people already study these decks from AnkiWeb. Anki recognises a note by its **GUID**: if an updated deck keeps the same GUIDs, importing it only refreshes the card contents and users keep all their review history. If a GUID changes, Anki imports the note as a brand-new card — a duplicate with no history.
+
+`data/guid-baseline/` records the GUIDs, notetypes and fields of the decks exactly as they were published:
+
+| Baseline | AnkiWeb |
+|---|---|
+| `old-books.json` | [Book 1](https://ankiweb.net/shared/info/876489453), [Book 2](https://ankiweb.net/shared/info/49468437), [Book 3](https://ankiweb.net/shared/info/1348583674), [Book 4](https://ankiweb.net/shared/info/648820475), [Book 5](https://ankiweb.net/shared/info/893444455), [Book 6](https://ankiweb.net/shared/info/70990553) |
+| `2nd-edition.json` | [2nd Edition [en-fa]](https://ankiweb.net/shared/info/1813442257) |
+
+`anki_generator.py` reuses the baseline GUIDs, so fixing a definition, hint or translation never creates new notes. Before re-sharing any deck, run the check:
+
+```bash
+python scripts/compat/check_compat.py check --baseline data/guid-baseline/old-books.json dist/old-books/*.apkg
+python scripts/compat/check_compat.py check --baseline data/guid-baseline/2nd-edition.json "dist/shared-deck/4000 EEW (2nd Edition).apkg"
+```
+
+Only upload to AnkiWeb when it prints `OK`. Add `--only-decks-present` when checking a single Old Book. After a deck is re-shared, record it as the new baseline:
+
+```bash
+python scripts/compat/check_compat.py snapshot --out data/guid-baseline/old-books.json dist/old-books/*.apkg
+```
+
+Rules the check enforces:
+- **Never change** a notetype ID (`MODEL_ID`), its field list or field order, or remove/reorder card templates.
+- **Never drop** a published note or give it a new GUID.
+- **Safe:** editing field contents, CSS and card layout, renaming decks, adding new notes.

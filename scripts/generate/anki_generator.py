@@ -1,8 +1,15 @@
+import argparse
 import json
 import os
+import sys
 import genanki
 import re
+from pathlib import Path
 from bs4 import BeautifulSoup
+
+# check_compat.py lives in a sibling directory (scripts/compat/).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "compat"))
+from check_compat import load_guid_map, normalize_key
 
 import spacy
 # Load spaCy model
@@ -10,22 +17,36 @@ nlp_spaCy = spacy.load("en_core_web_lg", disable=["ner"])
 nlp_spaCy.add_pipe("sentencizer", before="parser")
 nlp_spaCy.get_pipe("lemmatizer").lookups
 
-#https://github.com/stanfordnlp/stanza/tree/main
-import stanza
-stanza.download("en")
 # =========================
-# Load Stanza pipeline
+# Stanza pipeline (only used by find_sentence_with_word_Stanza, so it is
+# loaded on first use instead of downloading the model on every import)
+# https://github.com/stanfordnlp/stanza/tree/main
 # =========================
-nlp_stanza = stanza.Pipeline(
-    lang="en",
-    processors="tokenize,pos,lemma",
-    use_gpu=False
-)
+_nlp_stanza = None
+
+def get_nlp_stanza():
+    global _nlp_stanza
+    if _nlp_stanza is None:
+        import stanza
+        stanza.download("en")
+        _nlp_stanza = stanza.Pipeline(
+            lang="en",
+            processors="tokenize,pos,lemma",
+            use_gpu=False
+        )
+    return _nlp_stanza
 
 # Unique IDs - Keep these constant to allow future updates
 MODEL_ID = 1782130091
 # Base ID for the main deck
 BASE_DECK_ID = 2026062215
+
+# GUIDs of the notes published on AnkiWeb. Anki matches imported notes by GUID,
+# so reusing them lets users import an updated deck without losing their review
+# history. Never edit this file by hand; see scripts/compat/check_compat.py.
+GUID_BASELINE = "data/guid-baseline/old-books.json"
+# Namespace for GUIDs of words that have not been published yet
+GUID_NAMESPACE = "4000eew-old-books"
 
 # CSS for centering content and basic styling
 STYLE = """
@@ -193,6 +214,7 @@ def find_sentence_with_word_Stanza(html_story, target_word):
     text = clean_text(html_story)
 
     # Process with Stanza
+    nlp_stanza = get_nlp_stanza()
     doc = nlp_stanza(text)
 
     nlp_target = nlp_stanza(target_word)
@@ -230,10 +252,24 @@ def get_sentence_with_word(story_text, word):
     # Return the matched sentence or a fallback if not found
     return match.group(1).strip() if match else "Context not found."
 
-def create_deck(book_id):
+def note_guid(guid_map, deck_name, book_id, word):
+    """
+    Reuse the published GUID of this word. Words that were never published get a
+    GUID derived from the word alone (not from the card text), so fixing a
+    definition or hint later does not turn the note into a new one.
+    """
+    key = normalize_key(word)
+    guid = guid_map.get((deck_name, key))
+    if guid is None:
+        guid = genanki.guid_for(GUID_NAMESPACE, book_id, key)
+        print(f"New note (not in {GUID_BASELINE}): {word}")
+    return guid
+
+def create_deck(book_id, guid_map, out_dir="dist/old-books"):
     """
     book_id: integer from 1 to 6
-    book_folder: path to the folder containing data.json, images, and audio
+    guid_map: {(deck_name, word): guid} of the published notes, from load_guid_map()
+    out_dir: folder the .apkg is written to
     """
 
     print(f"--Book: {book_id}")
@@ -258,7 +294,7 @@ def create_deck(book_id):
             continue
         
         unit_tag = unit["en"].replace(" ", "")
-        print(f"----Unit: {unit["en"]}")
+        print(f"----Unit: {unit['en']}")
         
         #if "Unit2" != unit_tag: continue
 
@@ -303,17 +339,28 @@ def create_deck(book_id):
                     f"Book{book_id}",
                     f"{unit_tag}",
                     f"Book{book_id}::{unit_tag}"
-                ]
+                ],
+                guid=note_guid(guid_map, deck_name, book_id, word)
             )
             deck.add_note(note)
             #if word == "scare": break
         #break
     package = genanki.Package(deck)
     package.media_files = media_files
-    output_file = f"dist/old-books/4000EEW_Old_Book_{book_id}.apkg"
+    os.makedirs(out_dir, exist_ok=True)
+    output_file = os.path.join(out_dir, f"4000EEW_Old_Book_{book_id}.apkg")
     package.write_to_file(output_file)
     print(f"Generated: {output_file}")
-    
+
 if __name__ == "__main__":
-    for i in range(1,7):
-        create_deck(i)
+    parser = argparse.ArgumentParser(description="Build the 4000 EEW (Old Books) decks")
+    parser.add_argument("--books", type=int, nargs="+", default=range(1, 7), help="Book numbers to build (default: 1-6)")
+    parser.add_argument("--out-dir", default="dist/old-books")
+    args = parser.parse_args()
+
+    guid_map = load_guid_map(GUID_BASELINE)
+    for i in args.books:
+        create_deck(i, guid_map, args.out_dir)
+
+    print("\nBefore sharing on AnkiWeb, check that existing users keep their progress:")
+    print(f"  python scripts/compat/check_compat.py check --baseline {GUID_BASELINE} {args.out_dir}/*.apkg")
