@@ -1,5 +1,5 @@
 {
- "description": "Published on AnkiWeb 2026-06-26: Old Book 1-6 = 876489453, 49468437, 1348583674, 648820475, 893444455, 70990553",
+ "description": "Published on AnkiWeb 2026-06-26: Old Book 1-6 = 876489453, 49468437, 1348583674, 648820475, 893444455, 70990553. Verified against the AnkiWeb downloads on 2026-10-16; the 'beware' note (Book 4) was hand-edited in Anki before sharing and is recorded as on AnkiWeb.",
  "created": "2026-10-16",
  "sources": [
   "dist/old-books/4000EEW_Old_Book_1.apkg",
@@ -14872,8 +14872,8 @@
    "notetype": "1782130091",
    "deck": "4000 EEW (Old Books)::Book 4",
    "key": "beware",
-   "mod": 1782194396,
-   "fields_sha1": "5dfa4280c1e8d77e1ab9950fc6161dd7a96089c6"
+   "mod": 1782401047,
+   "fields_sha1": "1d361055d89173c90e512e3bb140e1cdfe2d3445"
   },
   {
    "guid": "LMtY:K~?k(",
