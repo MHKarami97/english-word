@@ -6,8 +6,9 @@ recognise notes (GUIDs, note/notetype/deck IDs, fields).
     python scripts/fix/compress_media.py --audio-kbps 32 --webp 85 --out-dir out/final out/fixed/4000EEW_Old_Book_*.apkg
 
 - MP3 audio is re-encoded to mono at the given bitrate (same sample rate);
-  files that are already mono at or below that bitrate are left alone, so a
-  second run never re-encodes (and degrades) them again.
+  files whose average bitrate is already within 10% of the target are left
+  alone, so a second run never re-encodes (and degrades) them again. (The
+  2nd Edition audio is VBR at ~38 kbps already, so it is not worth it there.)
 - With --webp, JPEG/PNG images become WebP files (name.jpg -> name.webp) and
   the notes' <img src="..."> references are updated.
 - A file is only replaced when the result is at least 10% smaller.
@@ -112,10 +113,16 @@ def _set(entry, num, wire, value):
 # ---------------------------------------------------------------------------
 
 def mp3_params(data: bytes):
-    """(bitrate_kbps, sample_rate, channels) of the first MP3 frame, or None."""
+    """
+    (average_kbps, sample_rate, channels) measured over all MP3 frames, or None.
+    The first frame alone is misleading for VBR files (it is often a 64 kbps
+    Xing/Info header in front of ~35 kbps audio).
+    """
     i = 0
     if data[:3] == b"ID3" and len(data) > 10:
         i = 10 + ((data[6] << 21) | (data[7] << 14) | (data[8] << 7) | data[9])
+    total_bits = duration = 0.0
+    sample_rate = channels = None
     while i < len(data) - 4:
         if data[i] == 0xFF and data[i + 1] & 0xE0 == 0xE0:
             ver = (data[i + 1] >> 3) & 3
@@ -123,10 +130,19 @@ def mp3_params(data: bytes):
             sr_index = (data[i + 2] >> 2) & 3
             rates = {3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000]}.get(ver)
             if rates and sr_index < 3 and bitrate:
-                channels = 1 if (data[i + 3] >> 6) == 3 else 2
-                return bitrate, rates[sr_index], channels
+                rate = rates[sr_index]
+                samples = 1152 if ver == 3 else 576
+                size = samples // 8 * bitrate * 1000 // rate + ((data[i + 2] >> 1) & 1)
+                sample_rate = sample_rate or rate
+                channels = channels or (1 if (data[i + 3] >> 6) == 3 else 2)
+                total_bits += size * 8
+                duration += samples / rate
+                i += size
+                continue
         i += 1
-    return None
+    if not duration:
+        return None
+    return total_bits / duration / 1000, sample_rate, channels
 
 
 def compress_mp3(data: bytes, kbps: int):
@@ -134,8 +150,8 @@ def compress_mp3(data: bytes, kbps: int):
     if not params:
         return None
     bitrate, sample_rate, channels = params
-    if channels == 1 and bitrate <= kbps:
-        return None                       # already compressed: never re-encode
+    if bitrate <= kbps * 1.1:
+        return None                       # already this small: never re-encode
     with tempfile.TemporaryDirectory() as tmp:
         src, dst = Path(tmp) / "in.mp3", Path(tmp) / "out.mp3"
         src.write_bytes(data)
@@ -148,10 +164,13 @@ def compress_mp3(data: bytes, kbps: int):
 
 def compress_image(data: bytes, quality: int):
     from PIL import Image
-    image = Image.open(io.BytesIO(data))
+    try:
+        image = Image.open(io.BytesIO(data))
+        image.load()
+    except Exception:
+        return None                       # not a readable image: leave it as it is
     if image.format == "WEBP":
         return None
-    image.load()
     if image.mode not in ("RGB", "RGBA"):
         image = image.convert("RGBA" if "transparency" in image.info or image.mode in ("LA", "P") else "RGB")
     buf = io.BytesIO()

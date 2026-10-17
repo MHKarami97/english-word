@@ -16,17 +16,26 @@ on:
         required: true
         default: "4000 EEW (Old Books) — smaller download"
       second_edition_tag:
-        description: "Release tag for the 2nd Edition deck"
+        description: "Release tag for the 2nd Edition deck (only used when it is released too)"
         required: true
         default: "v2.2.0"
       second_edition_title:
         description: "Release title for the 2nd Edition deck"
         required: true
         default: "4000 EEW (2nd Edition) — smaller download"
-      compress:
-        description: "Compress media (2nd Edition: mono 48 kbps audio; Old Books: mono 32 kbps audio + WebP images)"
+      old_books_audio_kbps:
+        description: "Old Books: mono MP3 bitrate (empty = keep audio)"
+        default: "32"
+      old_books_webp:
+        description: "Old Books: WebP quality for images (empty = keep images)"
+        default: "85"
+      second_edition_audio_kbps:
+        description: "2nd Edition: mono MP3 bitrate (empty = keep audio; it is already ~38 kbps VBR)"
+        default: ""
+      release_second_edition:
+        description: "Also create a 2nd Edition release"
         type: boolean
-        default: true
+        default: false
       publish:
         description: "Create the releases (otherwise only build, check and make listening samples)"
         type: boolean
@@ -44,7 +53,10 @@ jobs:
       OLD_BOOKS_TITLE: ${{ inputs.old_books_title }}
       SECOND_EDITION_TAG: ${{ inputs.second_edition_tag }}
       SECOND_EDITION_TITLE: ${{ inputs.second_edition_title }}
-      COMPRESS: ${{ inputs.compress }}
+      OLD_KBPS: ${{ inputs.old_books_audio_kbps }}
+      OLD_WEBP: ${{ inputs.old_books_webp }}
+      SECOND_KBPS: ${{ inputs.second_edition_audio_kbps }}
+      RELEASE_SECOND: ${{ inputs.release_second_edition }}
       # The 2nd Edition source is the published v2.0.0 asset (identical to AnkiWeb).
       SOURCE_TAG: v2.0.0
       SOURCE_ASSET: 4000.EEW.2nd.Edition.apkg
@@ -68,7 +80,7 @@ jobs:
         if: ${{ inputs.publish }}
         run: |
           test -f "docs/release-notes/$OLD_BOOKS_TAG.md"
-          test -f "docs/release-notes/$SECOND_EDITION_TAG.md"
+          if [ "$RELEASE_SECOND" = "true" ]; then test -f "docs/release-notes/$SECOND_EDITION_TAG.md"; fi
 
       - name: Download the published 2nd Edition deck
         run: |
@@ -84,6 +96,7 @@ jobs:
 
       - name: Apply hint, translation and typo fixes
         run: |
+          set -o pipefail
           python scripts/fix/fix_deck.py --edition old-books --out-dir out/fixed --report out/changes-old-books.md dist/old-books/*.apkg
           python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir out/fixed --report out/changes-2nd-edition.md "source/$SOURCE_ASSET"
           # A second run must change nothing.
@@ -95,19 +108,25 @@ jobs:
 
       - name: Compress media
         run: |
-          if [ "$COMPRESS" = "true" ]; then
-            python scripts/fix/compress_media.py --audio-kbps 48 --out-dir out/final \
-              --samples-dir out/samples --samples 4 "out/fixed/$SOURCE_ASSET" | tee compress.log
-            python scripts/fix/compress_media.py --audio-kbps 32 --webp 85 --out-dir out/final \
-              --samples-dir out/samples --samples 2 out/fixed/4000EEW_Old_Book_*.apkg | tee -a compress.log
+          set -o pipefail
+          mkdir -p out/final
+          old_args=""; [ -n "$OLD_KBPS" ] && old_args="$old_args --audio-kbps $OLD_KBPS"; [ -n "$OLD_WEBP" ] && old_args="$old_args --webp $OLD_WEBP"
+          if [ -n "$old_args" ]; then
+            python scripts/fix/compress_media.py $old_args --out-dir out/final --samples-dir out/samples --samples 2 out/fixed/4000EEW_Old_Book_*.apkg | tee compress.log
             # A second run must change nothing (no re-encoding of compressed files).
-            python scripts/fix/compress_media.py --audio-kbps 48 --out-dir again2 "out/final/$SOURCE_ASSET" | tee again2.log
-            python scripts/fix/compress_media.py --audio-kbps 32 --webp 85 --out-dir again2 out/final/4000EEW_Old_Book_*.apkg | tee -a again2.log
-            if grep -E ": [1-9][0-9]* media file" again2.log; then
-              echo "compress_media.py is not idempotent"; exit 1
-            fi
+            python scripts/fix/compress_media.py $old_args --out-dir again2 out/final/4000EEW_Old_Book_*.apkg | tee again2.log
           else
-            mkdir -p out/final && cp out/fixed/*.apkg out/final/
+            cp out/fixed/4000EEW_Old_Book_*.apkg out/final/
+          fi
+          if [ -n "$SECOND_KBPS" ]; then
+            python scripts/fix/compress_media.py --audio-kbps "$SECOND_KBPS" --out-dir out/final --samples-dir out/samples --samples 4 "out/fixed/$SOURCE_ASSET" | tee -a compress.log
+            python scripts/fix/compress_media.py --audio-kbps "$SECOND_KBPS" --out-dir again2 "out/final/$SOURCE_ASSET" | tee -a again2.log
+          else
+            cp "out/fixed/$SOURCE_ASSET" out/final/
+          fi
+          touch compress.log again2.log
+          if grep -E ": [1-9][0-9]* media file" again2.log; then
+            echo "compress_media.py is not idempotent"; exit 1
           fi
 
       - name: Check the new decks
