@@ -4,18 +4,6 @@ Everything noticed while working on the decks, so it can be handled later. Add n
 
 ## Open
 
-### Old Book 5: the "biography" image is empty
-- **Found:** 2026-10-17
-- **Where:** `data/old-books/book5/images/28063.jpg` (note `biography`, GUID `f..]!T6qT%`). The file is 38,738 bytes of zeros — committed like this since the first dataset commit.
-- **Impact:** the card shows no picture in every published version of Old Book 5 (AnkiWeb and GitHub v1.0.0–v1.2.0). `compress_media.py` leaves it untouched because it is not a readable image.
-- **Fix:** a valid copy exists in the author's Anki profile: `collection.media/28063-30103528147b49a8298c486287c1353b73ecfffd.jpg` (SHA-1 matches its name, starts with a JPEG header). Copy it to `data/old-books/book5/images/28063.jpg`, rebuild Book 5 (it will be picked up by `fix_deck.py`'s media update and converted to WebP), release and re-share Book 5.
-
-### 2nd Edition: one oversized image
-- **Found:** 2026-10-17
-- **Where:** `Brill_windmill_April_2017.jpg`, 3832×2899 px, 5.0 MB (≈9% of all 2nd Edition image data), used by the note `mill` (GUID `fbb=[HIzxN`), which shows two pictures (`08_1353.jpg` and this one).
-- **Impact:** a larger download for a single card. 3,437 of 3,871 images are 300–399 px wide; only 10 have a longest side above 480 px.
-- **Fix:** shrink images whose longest side exceeds 480 px (keep aspect ratio, never upscale, keep JPEG). Saves ≈5 MB. Best bundled with the next 2nd Edition content release, since every release means re-sharing on AnkiWeb (24-hour review).
-
 ### Raw 2nd Edition data: mislabeled, large images
 - **Found:** 2026-10-17
 - **Where:** 43 files in `data/2nd-edition/book*/images/` have a `.jpg` name but are PNG (42) or GIF (1, `restaurant.jpg`), 150–960 KB each (e.g. `carrot.jpg`, `Environment-Over-Convenience.jpg`).
@@ -54,6 +42,18 @@ Everything noticed while working on the decks, so it can be handled later. Add n
 - **Found:** 2026-10-17
 - **Where:** 72 `.wav`, 5 `.ogg` and 1 `.svg` file among the 2nd Edition media (from the original shared deck).
 - **Fix (check):** confirm they play/display on AnkiMobile (iOS) and AnkiDroid; convert to MP3/PNG if not.
+
+## Fixed, waiting for the next release
+
+### Old Book 5: the "biography" image was empty
+- **Found:** 2026-10-17. `data/old-books/book5/images/28063.jpg` (note `biography`, GUID `f..]!T6qT%`) was 38,738 bytes of zeros since the first dataset commit, so the card had no picture in every published Old Book 5 (AnkiWeb, GitHub v1.0.0–v1.2.0).
+- **Fixed:** 2026-10-17 — restored from the author's Anki profile (`collection.media/28063-30103528147b49a8298c486287c1353b73ecfffd.jpg`, SHA-1 verified; a 300×300 JPEG). The next build picks it up through `fix_deck.py`'s media update (the note is marked newer) and converts it to WebP.
+- **Ships with:** the next Old Books release (re-share Book 5 on AnkiWeb).
+
+### 2nd Edition: one oversized image
+- **Found:** 2026-10-17. `Brill_windmill_April_2017.jpg` (3832×2899 px, 5.0 MB, ≈9% of all 2nd Edition image data) on the note `mill` (GUID `fbb=[HIzxN`).
+- **Fixed:** 2026-10-17 — `compress_media.py --max-image-side` (workflow input `max_image_side`, default 700 px) scales such images down, keeping aspect ratio and format. Tested: the windmill becomes 28 KB and the 2nd Edition package 217.2 → 212.3 MB. The 2nd Edition standard is 390×260 px; nine wide images (up to 650×260) share the standard height and are left as they are.
+- **Ships with:** the next 2nd Edition release (`release_second_edition`).
 
 ## Notes (not bugs)
 

@@ -32,6 +32,9 @@ on:
       second_edition_audio_kbps:
         description: "2nd Edition: mono MP3 bitrate (empty = keep audio; it is already ~38 kbps VBR)"
         default: ""
+      max_image_side:
+        description: "Both editions: scale images whose longest side exceeds this many pixels (empty = keep sizes)"
+        default: "700"
       release_second_edition:
         description: "Also create a 2nd Edition release"
         type: boolean
@@ -56,6 +59,7 @@ jobs:
       OLD_KBPS: ${{ inputs.old_books_audio_kbps }}
       OLD_WEBP: ${{ inputs.old_books_webp }}
       SECOND_KBPS: ${{ inputs.second_edition_audio_kbps }}
+      MAX_SIDE: ${{ inputs.max_image_side }}
       RELEASE_SECOND: ${{ inputs.release_second_edition }}
       # The 2nd Edition source is the published v2.0.0 asset (identical to AnkiWeb).
       SOURCE_TAG: v2.0.0
@@ -111,6 +115,8 @@ jobs:
           set -o pipefail
           mkdir -p out/final
           old_args=""; [ -n "$OLD_KBPS" ] && old_args="$old_args --audio-kbps $OLD_KBPS"; [ -n "$OLD_WEBP" ] && old_args="$old_args --webp $OLD_WEBP"
+          [ -n "$MAX_SIDE" ] && old_args="$old_args --max-image-side $MAX_SIDE"
+          second_args=""; [ -n "$SECOND_KBPS" ] && second_args="--audio-kbps $SECOND_KBPS"; [ -n "$MAX_SIDE" ] && second_args="$second_args --max-image-side $MAX_SIDE"
           if [ -n "$old_args" ]; then
             python scripts/fix/compress_media.py $old_args --out-dir out/final --samples-dir out/samples --samples 2 out/fixed/4000EEW_Old_Book_*.apkg | tee compress.log
             # A second run must change nothing (no re-encoding of compressed files).
@@ -118,9 +124,9 @@ jobs:
           else
             cp out/fixed/4000EEW_Old_Book_*.apkg out/final/
           fi
-          if [ -n "$SECOND_KBPS" ]; then
-            python scripts/fix/compress_media.py --audio-kbps "$SECOND_KBPS" --out-dir out/final --samples-dir out/samples --samples 4 "out/fixed/$SOURCE_ASSET" | tee -a compress.log
-            python scripts/fix/compress_media.py --audio-kbps "$SECOND_KBPS" --out-dir again2 "out/final/$SOURCE_ASSET" | tee -a again2.log
+          if [ -n "$second_args" ]; then
+            python scripts/fix/compress_media.py $second_args --out-dir out/final --samples-dir out/samples --samples 4 "out/fixed/$SOURCE_ASSET" | tee -a compress.log
+            python scripts/fix/compress_media.py $second_args --out-dir again2 "out/final/$SOURCE_ASSET" | tee -a again2.log
           else
             cp "out/fixed/$SOURCE_ASSET" out/final/
           fi
