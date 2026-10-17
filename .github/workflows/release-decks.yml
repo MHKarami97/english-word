@@ -1,8 +1,8 @@
 name: Release decks
 
-# Builds the corrected decks on GitHub's servers, checks that people who
-# already study the AnkiWeb/GitHub versions keep their review history, and
-# (only when "publish" is ticked) creates the GitHub releases.
+# Builds the corrected (and optionally compressed) decks on GitHub's servers,
+# checks that people who already study the AnkiWeb/GitHub versions keep their
+# review history, and (only when "publish" is ticked) creates the GitHub releases.
 
 on:
   workflow_dispatch:
@@ -10,13 +10,25 @@ on:
       old_books_tag:
         description: "Release tag for the Old Books decks"
         required: true
-        default: "v1.1.0"
+        default: "v1.2.0"
+      old_books_title:
+        description: "Release title for the Old Books decks"
+        required: true
+        default: "4000 EEW (Old Books) — smaller download"
       second_edition_tag:
         description: "Release tag for the 2nd Edition deck"
         required: true
-        default: "v2.1.0"
+        default: "v2.2.0"
+      second_edition_title:
+        description: "Release title for the 2nd Edition deck"
+        required: true
+        default: "4000 EEW (2nd Edition) — smaller download"
+      compress:
+        description: "Compress media (2nd Edition: mono 48 kbps audio; Old Books: mono 32 kbps audio + WebP images)"
+        type: boolean
+        default: true
       publish:
-        description: "Create the releases (otherwise only build and check)"
+        description: "Create the releases (otherwise only build, check and make listening samples)"
         type: boolean
         default: false
 
@@ -29,7 +41,10 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       OLD_BOOKS_TAG: ${{ inputs.old_books_tag }}
+      OLD_BOOKS_TITLE: ${{ inputs.old_books_title }}
       SECOND_EDITION_TAG: ${{ inputs.second_edition_tag }}
+      SECOND_EDITION_TITLE: ${{ inputs.second_edition_title }}
+      COMPRESS: ${{ inputs.compress }}
       # The 2nd Edition source is the published v2.0.0 asset (identical to AnkiWeb).
       SOURCE_TAG: v2.0.0
       SOURCE_ASSET: 4000.EEW.2nd.Edition.apkg
@@ -44,9 +59,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install zstandard==0.23.0
+        run: |
+          pip install zstandard==0.23.0 pillow==11.0.0
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
 
       - name: Check release notes exist
+        if: ${{ inputs.publish }}
         run: |
           test -f "docs/release-notes/$OLD_BOOKS_TAG.md"
           test -f "docs/release-notes/$SECOND_EDITION_TAG.md"
@@ -65,38 +84,58 @@ jobs:
 
       - name: Apply hint, translation and typo fixes
         run: |
-          python scripts/fix/fix_deck.py --edition old-books --out-dir out --report out/changes-old-books.md dist/old-books/*.apkg
-          python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir out --report out/changes-2nd-edition.md "source/$SOURCE_ASSET"
-
-      - name: Check the new decks
-        run: |
-          python scripts/compat/verify_apkg.py out/*.apkg
-          python scripts/compat/check_compat.py check --baseline data/guid-baseline/old-books.json out/4000EEW_Old_Book_*.apkg
-          python scripts/compat/check_compat.py check --baseline data/guid-baseline/2nd-edition.json "out/$SOURCE_ASSET"
+          python scripts/fix/fix_deck.py --edition old-books --out-dir out/fixed --report out/changes-old-books.md dist/old-books/*.apkg
+          python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir out/fixed --report out/changes-2nd-edition.md "source/$SOURCE_ASSET"
           # A second run must change nothing.
-          python scripts/fix/fix_deck.py --edition old-books --out-dir again out/4000EEW_Old_Book_*.apkg | tee again.log
-          python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir again "out/$SOURCE_ASSET" | tee -a again.log
+          python scripts/fix/fix_deck.py --edition old-books --out-dir again out/fixed/4000EEW_Old_Book_*.apkg | tee again.log
+          python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir again "out/fixed/$SOURCE_ASSET" | tee -a again.log
           if grep -E ": [1-9][0-9]* note\(s\) changed|updated media file" again.log; then
             echo "fix_deck.py is not idempotent"; exit 1
           fi
-          (cd out && sha256sum *.apkg | tee SHA256SUMS.txt)
 
-      - name: Keep the change reports
+      - name: Compress media
+        run: |
+          if [ "$COMPRESS" = "true" ]; then
+            python scripts/fix/compress_media.py --audio-kbps 48 --out-dir out/final \
+              --samples-dir out/samples --samples 4 "out/fixed/$SOURCE_ASSET" | tee compress.log
+            python scripts/fix/compress_media.py --audio-kbps 32 --webp 85 --out-dir out/final \
+              --samples-dir out/samples --samples 2 out/fixed/4000EEW_Old_Book_*.apkg | tee -a compress.log
+            # A second run must change nothing (no re-encoding of compressed files).
+            python scripts/fix/compress_media.py --audio-kbps 48 --out-dir again2 "out/final/$SOURCE_ASSET" | tee again2.log
+            python scripts/fix/compress_media.py --audio-kbps 32 --webp 85 --out-dir again2 out/final/4000EEW_Old_Book_*.apkg | tee -a again2.log
+            if grep -E ": [1-9][0-9]* media file" again2.log; then
+              echo "compress_media.py is not idempotent"; exit 1
+            fi
+          else
+            mkdir -p out/final && cp out/fixed/*.apkg out/final/
+          fi
+
+      - name: Check the new decks
+        run: |
+          python scripts/compat/verify_apkg.py out/final/*.apkg
+          python scripts/compat/check_compat.py check --baseline data/guid-baseline/old-books.json out/final/4000EEW_Old_Book_*.apkg
+          python scripts/compat/check_compat.py check --baseline data/guid-baseline/2nd-edition.json "out/final/$SOURCE_ASSET"
+          (cd out/final && sha256sum *.apkg | tee ../SHA256SUMS.txt)
+          ls -l out/fixed out/final
+
+      - name: Keep the change reports and listening samples
         uses: actions/upload-artifact@v4
         with:
           name: change-reports
           path: |
             out/*.md
             out/SHA256SUMS.txt
+            out/samples/
+            compress.log
 
       - name: Publish the releases
         if: ${{ inputs.publish }}
         run: |
-          gh release create "$OLD_BOOKS_TAG" out/4000EEW_Old_Book_*.apkg \
+          gh release create "$OLD_BOOKS_TAG" out/final/4000EEW_Old_Book_*.apkg \
             --target "$GITHUB_SHA" --latest=false \
-            --title "4000 EEW (Old Books) — corrected hints and typos" \
+            --title "$OLD_BOOKS_TITLE" \
             --notes-file "docs/release-notes/$OLD_BOOKS_TAG.md"
-          gh release create "$SECOND_EDITION_TAG" "out/$SOURCE_ASSET" \
+          gh release create "$SECOND_EDITION_TAG" "out/final/$SOURCE_ASSET" \
             --target "$GITHUB_SHA" --latest \
-            --title "4000 EEW (2nd Edition) — corrected hints & Persian translations" \
+            --title "$SECOND_EDITION_TITLE" \
             --notes-file "docs/release-notes/$SECOND_EDITION_TAG.md"

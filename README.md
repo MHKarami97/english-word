@@ -85,6 +85,7 @@ scripts/
   fix/                  # Fixes hints, Persian translations and typos in built decks
     content_fixes.py
     fix_deck.py
+    compress_media.py   # Mono MP3 / WebP media for smaller downloads
 
 data/                   # Raw scraped data (data.json, images/, audio/) per book
   2nd-edition/book{1..6}/
@@ -148,3 +149,7 @@ python scripts/fix/fix_deck.py --edition 2nd-edition --out-dir dist/fixed --repo
 Releases are built and checked on GitHub's servers by the **Release decks** workflow (`.github/workflows/release-decks.yml`, run it from the Actions tab; tick *publish* only after a dry run). `scripts/compat/verify_apkg.py` checks package integrity (CRC and media SHA-1).
 
 The `--report` file lists every changed field for review. `anki_generator.py` applies the same rules, so a fresh Old Books build matches `fix_deck.py`'s output. Media files are verified too; a damaged one can be restored with `--repair-media-from` pointing at Anki's `collection.media` folder.
+
+### Smaller downloads
+
+`scripts/fix/compress_media.py` runs after `fix_deck.py` in the release workflow: MP3 audio becomes mono (48 kbps for the 2nd Edition, 32 kbps for the Old Books) and Old Books images become WebP. Files that are already compressed are never re-encoded, and every note that uses a changed file is marked newer so imports switch to the new files. Always build from the original sources (`dist/old-books/`, the v2.0.0 release) — running `fix_deck.py` on an already compressed Old Books deck would restore the original media from `data/`.
