@@ -154,7 +154,9 @@ jobs:
             --target "$GITHUB_SHA" --latest=false \
             --title "$OLD_BOOKS_TITLE" \
             --notes-file "docs/release-notes/$OLD_BOOKS_TAG.md"
-          gh release create "$SECOND_EDITION_TAG" "out/final/$SOURCE_ASSET" \
-            --target "$GITHUB_SHA" --latest \
-            --title "$SECOND_EDITION_TITLE" \
-            --notes-file "docs/release-notes/$SECOND_EDITION_TAG.md"
+          if [ "$RELEASE_SECOND" = "true" ]; then
+            gh release create "$SECOND_EDITION_TAG" "out/final/$SOURCE_ASSET" \
+              --target "$GITHUB_SHA" --latest \
+              --title "$SECOND_EDITION_TITLE" \
+              --notes-file "docs/release-notes/$SECOND_EDITION_TAG.md"
+          fi
