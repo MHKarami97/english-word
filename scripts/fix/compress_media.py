@@ -11,6 +11,8 @@ recognise notes (GUIDs, note/notetype/deck IDs, fields).
   2nd Edition audio is VBR at ~38 kbps already, so it is not worth it there.)
 - With --webp, JPEG/PNG images become WebP files (name.jpg -> name.webp) and
   the notes' <img src="..."> references are updated.
+- With --max-image-side, images larger than that are scaled down (aspect
+  ratio kept, never scaled up); without --webp they keep their format/name.
 - A file is only replaced when the result is at least 10% smaller.
 - Every note that uses a changed file gets a new modification time, so
   Anki's "update notes if newer" import switches it to the new files.
@@ -162,20 +164,43 @@ def compress_mp3(data: bytes, kbps: int):
     return out if len(out) <= len(data) * (1 - MIN_SAVING) else None
 
 
-def compress_image(data: bytes, quality: int):
+def compress_image(data: bytes, webp_quality=None, max_side=None):
+    """
+    Shrink an image: scale it down so its longest side is at most max_side
+    (never up, aspect ratio kept) and/or convert it to WebP. Without
+    webp_quality the original format is kept (JPEG at quality 85).
+    """
     from PIL import Image
     try:
         image = Image.open(io.BytesIO(data))
         image.load()
     except Exception:
         return None                       # not a readable image: leave it as it is
-    if image.format == "WEBP":
+    source_format = image.format
+    too_big = bool(max_side) and max(image.size) > max_side
+    to_webp = bool(webp_quality) and source_format != "WEBP"
+    if not (too_big or to_webp):
         return None
-    if image.mode not in ("RGB", "RGBA"):
-        image = image.convert("RGBA" if "transparency" in image.info or image.mode in ("LA", "P") else "RGB")
+    if too_big:
+        scale = max_side / max(image.size)
+        image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.LANCZOS)
     buf = io.BytesIO()
-    image.save(buf, "WEBP", quality=quality, method=6)
+    if to_webp or source_format == "WEBP":
+        if image.mode not in ("RGB", "RGBA"):
+            image = image.convert("RGBA" if "transparency" in image.info or image.mode in ("LA", "P") else "RGB")
+        image.save(buf, "WEBP", quality=webp_quality or 85, method=6)
+    elif source_format == "PNG":
+        image.save(buf, "PNG", optimize=True)
+    else:
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        image.save(buf, "JPEG", quality=85, optimize=True, progressive=True)
     out = buf.getvalue()
+    # Oversized images are always brought within max_side (consistent card
+    # layout) unless that would make the file bigger; plain re-encodes must
+    # save at least MIN_SAVING to be worth replacing the file.
+    if too_big:
+        return out if len(out) <= len(data) else None
     return out if len(out) <= len(data) * (1 - MIN_SAVING) else None
 
 
@@ -190,7 +215,7 @@ def _collection_member(names):
     raise FileNotFoundError("No collection file in this .apkg")
 
 
-def compress_apkg(src: Path, dst: Path, kbps, webp_quality, samples_dir, samples, workers):
+def compress_apkg(src: Path, dst: Path, kbps, webp_quality, samples_dir, samples, workers, max_side=None):
     import zstandard
     with zipfile.ZipFile(src) as zin, tempfile.TemporaryDirectory() as tmp:
         names = zin.namelist()
@@ -210,9 +235,10 @@ def compress_apkg(src: Path, dst: Path, kbps, webp_quality, samples_dir, samples
             if kbps and ext == "mp3":
                 out = compress_mp3(data, kbps)
                 return member, name, data, out, name
-            if webp_quality and ext in ("jpg", "jpeg", "png"):
-                out = compress_image(data, webp_quality)
-                return member, name, data, out, name.rsplit(".", 1)[0] + ".webp"
+            if (webp_quality or max_side) and ext in ("jpg", "jpeg", "png", "webp"):
+                out = compress_image(data, webp_quality, max_side)
+                new_name = name.rsplit(".", 1)[0] + ".webp" if webp_quality else name
+                return member, name, data, out, new_name
             return member, name, data, None, name
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -300,6 +326,8 @@ def main():
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--audio-kbps", type=int, help="Re-encode MP3 to mono at this bitrate")
     parser.add_argument("--webp", type=int, metavar="QUALITY", help="Convert JPEG/PNG images to WebP at this quality")
+    parser.add_argument("--max-image-side", type=int, metavar="PX",
+                        help="Scale images down so their longest side is at most PX (never up)")
     parser.add_argument("--samples-dir", help="Write before/after examples here")
     parser.add_argument("--samples", type=int, default=3, help="Examples per kind and deck (default 3)")
     parser.add_argument("--workers", type=int, default=4)
@@ -312,7 +340,8 @@ def main():
         if dst.resolve() == src.resolve():
             sys.exit("--out-dir must not be the folder of the input decks.")
         compress_apkg(src, dst, args.audio_kbps, args.webp,
-                      Path(args.samples_dir) if args.samples_dir else None, args.samples, args.workers)
+                      Path(args.samples_dir) if args.samples_dir else None, args.samples, args.workers,
+                      args.max_image_side)
 
 
 if __name__ == "__main__":
